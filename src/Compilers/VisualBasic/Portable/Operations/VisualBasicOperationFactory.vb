@@ -163,6 +163,8 @@ Namespace Microsoft.CodeAnalysis.Operations
                     Return CreateBoundParameterOperation(DirectCast(boundNode, BoundParameter))
                 Case BoundKind.Local
                     Return CreateBoundLocalOperation(DirectCast(boundNode, BoundLocal))
+                Case BoundKind.LocalDeclaration
+                    Return CreateBoundLocalDeclarationOperation(DirectCast(boundNode, BoundLocalDeclaration))
                 Case BoundKind.LateInvocation
                     Return CreateBoundLateInvocationOperation(DirectCast(boundNode, BoundLateInvocation))
                 Case BoundKind.LateMemberAccess
@@ -292,10 +294,44 @@ Namespace Microsoft.CodeAnalysis.Operations
                     Return Create(DirectCast(boundNode, BoundBadVariable).Expression)
                 Case BoundKind.NullableIsTrueOperator
                     Return CreateBoundNullableIsTrueOperator(DirectCast(boundNode, BoundNullableIsTrueOperator))
-                Case Else
+
+                Case BoundKind.AddressOfOperator,
+                     BoundKind.ArrayLiteral,
+                     BoundKind.Attribute,
+                     BoundKind.ByRefArgumentWithCopyBack,
+                     BoundKind.CompoundAssignmentTargetPlaceholder,
+                     BoundKind.EraseStatement,
+                     BoundKind.Label,
+                     BoundKind.LateAddressOfOperator,
+                     BoundKind.MethodGroup,
+                     BoundKind.MidResult,
+                     BoundKind.NamespaceExpression,
+                     BoundKind.OnErrorStatement,
+                     BoundKind.PropertyGroup,
+                     BoundKind.RangeVariable,
+                     BoundKind.RedimClause,
+                     BoundKind.RedimStatement,
+                     BoundKind.ResumeStatement,
+                     BoundKind.TypeAsValueExpression,
+                     BoundKind.TypeExpression,
+                     BoundKind.TypeOrValueExpression,
+                     BoundKind.XmlCData,
+                     BoundKind.XmlComment,
+                     BoundKind.XmlDocument,
+                     BoundKind.XmlElement,
+                     BoundKind.XmlEmbeddedExpression,
+                     BoundKind.XmlMemberAccess,
+                     BoundKind.XmlNamespace,
+                     BoundKind.XmlProcessingInstruction,
+                     BoundKind.UnboundLambda,
+                     BoundKind.UnstructuredExceptionHandlingStatement
+
                     Dim constantValue = ConvertToOptional(TryCast(boundNode, BoundExpression)?.ConstantValueOpt)
                     Dim isImplicit As Boolean = boundNode.WasCompilerGenerated
                     Return Operation.CreateOperationNone(_semanticModel, boundNode.Syntax, constantValue, Function() GetIOperationChildren(boundNode), isImplicit)
+
+                Case Else
+                    Throw ExceptionUtilities.UnexpectedValue(boundNode.Kind)
             End Select
         End Function
 
@@ -1281,15 +1317,7 @@ Namespace Microsoft.CodeAnalysis.Operations
         Private Function CreateBoundBlockOperation(boundBlock As BoundBlock) As IBlockOperation
             Dim statements As Lazy(Of ImmutableArray(Of IOperation)) = New Lazy(Of ImmutableArray(Of IOperation))(
                 Function()
-                    ' We should not be filtering OperationKind.None statements.
-                    ' https://github.com/dotnet/roslyn/issues/21776
-                    Return boundBlock.Statements.Select(Function(n) (s:=Create(n), bound:=n)).Where(
-                        Function(tuple)
-                            Return tuple.s.Kind <> OperationKind.None OrElse
-                                tuple.bound.Kind = BoundKind.WithStatement OrElse tuple.bound.Kind = BoundKind.StopStatement OrElse
-                                tuple.bound.Kind = BoundKind.EndStatement OrElse tuple.bound.Kind = BoundKind.UnstructuredExceptionHandlingStatement OrElse
-                                tuple.bound.Kind = BoundKind.ResumeStatement
-                        End Function).Select(Function(tuple) tuple.s).ToImmutableArray()
+                    Return boundBlock.Statements.Select(Function(n) Create(n)).ToImmutableArray()
                 End Function)
             Dim locals As ImmutableArray(Of ILocalSymbol) = boundBlock.Locals.As(Of ILocalSymbol)()
             Dim syntax As SyntaxNode = boundBlock.Syntax
@@ -1367,6 +1395,17 @@ Namespace Microsoft.CodeAnalysis.Operations
             Dim type As ITypeSymbol = Nothing
             Dim constantValue As [Optional](Of Object) = New [Optional](Of Object)()
             Dim isImplicit As Boolean = boundDimStatement.WasCompilerGenerated
+            Return New LazyVariableDeclarationGroupOperation(declarations, _semanticModel, syntax, type, constantValue, isImplicit)
+        End Function
+
+        Private Function CreateBoundLocalDeclarationOperation(boundLocalDeclaration As BoundLocalDeclaration) As IVariableDeclarationGroupOperation
+            Dim declarations As Lazy(Of ImmutableArray(Of IVariableDeclarationOperation)) =
+                New Lazy(Of ImmutableArray(Of IVariableDeclarationOperation))(Function() GetVariableDeclarationStatementVariables(ImmutableArray.Create(Of BoundLocalDeclarationBase)(boundLocalDeclaration)))
+            Dim syntax As SyntaxNode = boundLocalDeclaration.Syntax
+            Dim type As ITypeSymbol = Nothing
+            Dim constantValue As [Optional](Of Object) = New [Optional](Of Object)()
+            Debug.Assert(boundLocalDeclaration.WasCompilerGenerated)
+            Dim isImplicit As Boolean = True
             Return New LazyVariableDeclarationGroupOperation(declarations, _semanticModel, syntax, type, constantValue, isImplicit)
         End Function
 
